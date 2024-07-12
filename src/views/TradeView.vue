@@ -269,15 +269,14 @@
 
           <!-- Live Underlying Price -->
           <div class="col-6 text-center">
+		  
             <p class="mb-0" v-if="selectedMasterSymbol === 'NIFTY'">Nifty 50: <b>{{ niftyPrice }}</b></p>
             <p class="mb-0" v-if="selectedMasterSymbol === 'BANKNIFTY'">Bank Nifty: <b>{{ bankNiftyPrice }}</b></p>
             <p class="mb-0" v-if="selectedMasterSymbol === 'FINNIFTY'">Fin Nifty: <b>{{ finniftyPrice }}</b></p>
             <p class="mb-0" v-if="selectedMasterSymbol === 'NIFTYNXT50'">Nifty Next 50: <b>{{ niftynxt50Price }}</b></p>
-            <p class="mb-0" v-if="selectedMasterSymbol === 'MIDCPNIFTY'">Nifty Mid Select: <b>{{ midcpniftyPrice }}</b>
-            </p>
+            <p class="mb-0" v-if="selectedMasterSymbol === 'MIDCPNIFTY'">Nifty Mid Select: <b>{{ midcpniftyPrice }}</b></p>			
             <p class="mb-0" v-if="selectedMasterSymbol === 'SENSEX'">Sensex: <b>{{ sensexPrice }}</b></p>
             <p class="mb-0" v-if="selectedMasterSymbol === 'BANKEX'">Bankex: <b>{{ bankexPrice }}</b></p>
-            <p class="mb-0" v-if="selectedMasterSymbol === 'SENSEX50'">Sensex 50: <b>{{ sensex50Price }}</b></p>
           </div>
 
           <!-- Put Strike Selection -->
@@ -869,27 +868,28 @@ const fetchTradingData = async () => {
     response = await fetch(`http://localhost:3000/dhanSymbols?exchangeSymbol=${selectedExchange.value}&masterSymbol=${selectedMasterSymbol.value}`);
   } else if (selectedBroker.value?.brokerName === 'Flattrade') {
     response = await fetch(`http://localhost:3000/flattradeSymbols?exchangeSymbol=${selectedExchange.value}&masterSymbol=${selectedMasterSymbol.value}`);
-    console.log('Flattrade Symbols:', response);
   } else {
     throw new Error('Unsupported broker');
   }
 
   const data = await response.json();
   console.log('Data:', data);
-  expiryDates.value = data.expiryDates;
 
-  // Filter by selected expiry date before sorting and mapping
-  callStrikes.value = data.callStrikes
-    .filter(strike => strike.expiryDate === selectedExpiry.value)
-    .sort((a, b) => parseInt(a.strikePrice) - parseInt(b.strikePrice))
-    .map(strike => ({ ...strike, strikePrice: parseInt(strike.strikePrice) }));
+  // Filter expiry dates to show only dates up to near 3 weeks
+  const today = new Date();
+  const threeWeeksLater = new Date(today.getTime() + (21 * 24 * 60 * 60 * 1000)); // 21 days in milliseconds
+  const filteredExpiryDates = data.expiryDates.filter(dateStr => {
+    const expiryDate = new Date(dateStr);
+    return expiryDate <= threeWeeksLater;
+  });
 
-  putStrikes.value = data.putStrikes
-    .filter(strike => strike.expiryDate === selectedExpiry.value)
-    .sort((a, b) => parseInt(a.strikePrice) - parseInt(b.strikePrice))
-    .map(strike => ({ ...strike, strikePrice: parseInt(strike.strikePrice) }));
+  expiryDates.value = filteredExpiryDates;
+  
+  // Filter and set callStrikes and putStrikes for selected expiry date
+  callStrikes.value = filterAndSortStrikes(data.callStrikes, selectedExpiry.value);
+  putStrikes.value = filterAndSortStrikes(data.putStrikes, selectedExpiry.value);
 
-  // After fetching and setting callStrikes and putStrikes
+  // Ensure initial prices are set if they are 'N/A'
   if (niftyPrice.value === 'N/A') niftyPrice.value = getInitialPrice('NIFTY');
   if (bankNiftyPrice.value === 'N/A') bankNiftyPrice.value = getInitialPrice('BANKNIFTY');
   if (finniftyPrice.value === 'N/A') finniftyPrice.value = getInitialPrice('FINNIFTY');
@@ -899,14 +899,25 @@ const fetchTradingData = async () => {
   if (bankexPrice.value === 'N/A') bankexPrice.value = getInitialPrice('BANKEX');
   if (sensex50Price.value === 'N/A') sensex50Price.value = getInitialPrice('SENSEX50');
 
+  // Update strikes for the selected expiry value
   updateStrikesForExpiry(selectedExpiry.value);
 };
+
+// Function to filter and sort strikes by expiry date
+const filterAndSortStrikes = (strikes, selectedExpiryDate) => {
+  return strikes
+    .filter(strike => strike.expiryDate === selectedExpiryDate)
+    .sort((a, b) => parseInt(a.strikePrice) - parseInt(b.strikePrice))
+    .map(strike => ({ ...strike, strikePrice: parseInt(strike.strikePrice) }));
+};
+
 // Add watchers for the price values
 watch([niftyPrice, bankNiftyPrice, finniftyPrice, niftynxt50Price, midcpniftyPrice, sensexPrice, bankexPrice, sensex50Price], () => {
   if (selectedExpiry.value) {
     updateStrikesForExpiry(selectedExpiry.value);
   }
 });
+
 const formatDate = (dateString) => {
   if (selectedBroker.value?.brokerName === 'Dhan') {
     // Extract only the date part from the date string for Dhan
@@ -917,6 +928,7 @@ const formatDate = (dateString) => {
   }
   return dateString; // Default case, return the original date string
 };
+
 
 const updateStrikesForExpiry = (expiryDate) => {
   console.log('Updating strikes for expiry:', expiryDate);
